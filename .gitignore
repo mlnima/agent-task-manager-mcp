@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.js.map
+tasks/
+AGENTS.md
+package-lock.json
