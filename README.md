@@ -309,9 +309,11 @@ MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/agent-tasks?retryWri
 
 ## Integration
 
-### Claude Desktop
+### Option 1: Global install (recommended)
 
-Add to `claude_desktop_config.json`:
+After `npm install -g agent-task-manager-mcp`, use the binary name. No path or `npx` needed.
+
+**Claude Desktop** — add to `claude_desktop_config.json`:
 
 **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
 **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
@@ -320,8 +322,8 @@ Add to `claude_desktop_config.json`:
 {
 	"mcpServers": {
 		"agent-task-manager-mcp": {
-			"command": "npx",
-			"args": ["tsx", "C:/path/to/agent-task-manager-mcp/src/index.ts"],
+			"command": "agent-task-manager-mcp",
+			"args": [],
 			"env": {
 				"MONGODB_URI": "mongodb://localhost:27017/agent-tasks"
 			}
@@ -330,9 +332,43 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-### Cursor
+**Cursor** — add to MCP settings or `.cursor/mcp.json`:
 
-Add to Cursor MCP settings (or `.cursor/mcp.json`):
+```json
+{
+	"mcpServers": {
+		"agent-task-manager-mcp": {
+			"command": "agent-task-manager-mcp",
+			"args": [],
+			"env": {
+				"MONGODB_URI": "mongodb://localhost:27017/agent-tasks"
+			}
+		}
+	}
+}
+```
+
+---
+
+### Option 2: From path
+
+**Production (compiled)** — run `npm run build` first, then use `node`:
+
+```json
+{
+	"mcpServers": {
+		"agent-task-manager-mcp": {
+			"command": "node",
+			"args": ["C:/path/to/agent-task-manager-mcp/dist/index.js"],
+			"env": {
+				"MONGODB_URI": "mongodb://localhost:27017/agent-tasks"
+			}
+		}
+	}
+}
+```
+
+**Development (source)** — no build; uses `tsx` to run TypeScript directly:
 
 ```json
 {
