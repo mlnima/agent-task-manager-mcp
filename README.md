@@ -6,6 +6,10 @@
 [![MCP](https://img.shields.io/badge/MCP-1.0-green.svg)](https://modelcontextprotocol.io/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-ODM-green.svg)](https://mongoosejs.com/)
 
+```bash
+npm install -g agent-task-manager-mcp
+```
+
 ---
 
 ## Table of Contents
