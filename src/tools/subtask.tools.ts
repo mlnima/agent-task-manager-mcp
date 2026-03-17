@@ -1,6 +1,5 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js'
-import mongoose from 'mongoose'
-import { Subtask } from '../models/Subtask.js'
+import { getRouter, toAgentJSON } from '../storage/index.js'
 import {
   SubtaskCreateBulkSchema,
   SubtaskGetNextSchema,
@@ -70,48 +69,27 @@ export const subtaskToolDefinitions: Tool[] = [
   },
 ]
 
+const normalize = <T>(obj: T): T => JSON.parse(toAgentJSON(obj)) as T
+
 export const handleSubtaskTool = async (name: string, args: unknown): Promise<string> => {
+  const adapter = getRouter().getAdapter()
+
   switch (name) {
     case 'subtask_create_bulk': {
       const { taskId, subtasks } = SubtaskCreateBulkSchema.parse(args)
-      const taskOid = new mongoose.Types.ObjectId(taskId)
-
-      const docs = subtasks.map((s) => ({
-        taskId: taskOid,
-        title: s.title,
-        description: s.description,
-        category: s.category,
-        steps: s.steps,
-        priority: s.priority,
-        dependsOn: s.dependsOn.map((d) => new mongoose.Types.ObjectId(d)),
-      }))
-
-      const created = await Subtask.insertMany(docs)
+      const created = await adapter.subtaskCreateBulk(taskId, subtasks)
       return JSON.stringify({
         success: true,
         count: created.length,
-        subtasks: created.map((s) => ({ id: s._id, title: s.title, priority: s.priority })),
+        subtasks: created.map((s) => ({ id: s.id, title: s.title, priority: s.priority })),
       })
     }
 
     case 'subtask_get_next': {
       const { taskId, agentId } = SubtaskGetNextSchema.parse(args)
-      const taskOid = new mongoose.Types.ObjectId(taskId)
-
-      const passedIds = await Subtask.find({ taskId: taskOid, status: 'passed' }).distinct('_id')
-
-      const next = await Subtask.findOneAndUpdate(
-        {
-          taskId: taskOid,
-          status: 'pending',
-          $or: [{ dependsOn: { $size: 0 } }, { dependsOn: { $not: { $elemMatch: { $nin: passedIds } } } }],
-        },
-        { $set: { status: 'in_progress', agentId }, $inc: { attempts: 1 } },
-        { new: true, sort: { priority: -1, createdAt: 1 } }
-      ).lean()
-
+      const next = await adapter.subtaskGetNext(taskId, agentId)
       if (!next) return JSON.stringify({ success: true, subtask: null, message: 'No pending subtasks available' })
-      return JSON.stringify({ success: true, subtask: next })
+      return JSON.stringify({ success: true, subtask: normalize(next) })
     }
 
     case 'subtask_update_status': {
@@ -124,18 +102,9 @@ export const handleSubtaskTool = async (name: string, args: unknown): Promise<st
         return JSON.stringify({ success: false, error: 'lastError is required when marking a subtask as failed or blocked' })
       }
 
-      const update: Record<string, unknown> = { status }
-      if (evidence !== undefined) update.evidence = evidence
-      if (lastError !== undefined) update.lastError = lastError
-
-      const subtask = await Subtask.findOneAndUpdate(
-        { _id: id, agentId },
-        { $set: update },
-        { new: true }
-      ).lean()
-
+      const subtask = await adapter.subtaskUpdateStatus(id, agentId, { status, evidence, lastError })
       if (!subtask) return JSON.stringify({ success: false, error: 'Subtask not found or not owned by this agent' })
-      return JSON.stringify({ success: true, subtask })
+      return JSON.stringify({ success: true, subtask: normalize(subtask) })
     }
 
     default:

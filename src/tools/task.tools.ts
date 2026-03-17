@@ -1,9 +1,5 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js'
-import mongoose from 'mongoose'
-import { Task } from '../models/Task.js'
-import { Subtask } from '../models/Subtask.js'
-import { Session } from '../models/Session.js'
-import { Checkpoint } from '../models/Checkpoint.js'
+import { getRouter, toAgentJSON } from '../storage/index.js'
 import {
   TaskCreateSchema,
   TaskUpdateSchema,
@@ -48,7 +44,7 @@ export const taskToolDefinitions: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'MongoDB ObjectId of the task' },
+        id: { type: 'string', description: 'Task ID' },
       },
       required: ['id'],
     },
@@ -132,92 +128,65 @@ export const taskToolDefinitions: Tool[] = [
   },
 ]
 
+const normalize = <T>(obj: T): T => JSON.parse(toAgentJSON(obj)) as T
+
 export const handleTaskTool = async (name: string, args: unknown): Promise<string> => {
+  const adapter = getRouter().getAdapter()
+
   switch (name) {
     case 'task_create': {
       const input = TaskCreateSchema.parse(args)
-      const task = await Task.create(input)
-      return JSON.stringify({ success: true, task })
+      const task = await adapter.taskCreate(input)
+      return JSON.stringify({ success: true, task: normalize(task) })
     }
 
     case 'task_get': {
       const { id } = TaskGetSchema.parse(args)
-      const task = await Task.findById(id).lean()
+      const task = await adapter.taskFindById(id)
       if (!task) return JSON.stringify({ success: false, error: 'Task not found' })
 
       const [total, passed, failed, pending, inProgress] = await Promise.all([
-        Subtask.countDocuments({ taskId: id }),
-        Subtask.countDocuments({ taskId: id, status: 'passed' }),
-        Subtask.countDocuments({ taskId: id, status: 'failed' }),
-        Subtask.countDocuments({ taskId: id, status: 'pending' }),
-        Subtask.countDocuments({ taskId: id, status: 'in_progress' }),
+        adapter.subtaskCountByTask(id),
+        adapter.subtaskCountByTask(id, 'passed'),
+        adapter.subtaskCountByTask(id, 'failed'),
+        adapter.subtaskCountByTask(id, 'pending'),
+        adapter.subtaskCountByTask(id, 'in_progress'),
       ])
 
-      return JSON.stringify({ success: true, task, subtaskSummary: { total, passed, failed, pending, inProgress } })
+      return JSON.stringify({ success: true, task: normalize(task), subtaskSummary: { total, passed, failed, pending, inProgress } })
     }
 
     case 'task_list': {
       const { status, phase, tags, limit, skip } = TaskListSchema.parse(args)
-      const filter: Record<string, unknown> = {}
-      if (status) filter.status = status
-      if (phase) filter.phase = phase
-      if (tags?.length) filter.tags = { $in: tags }
-
-      const [tasks, total] = await Promise.all([
-        Task.find(filter).sort({ priority: -1, createdAt: -1 }).limit(limit).skip(skip).lean(),
-        Task.countDocuments(filter),
-      ])
-
-      return JSON.stringify({ success: true, tasks, total, limit, skip })
+      const { tasks, total } = await adapter.taskList({ status, phase, tags, limit, skip })
+      return JSON.stringify({ success: true, tasks: tasks.map(normalize), total, limit, skip })
     }
 
     case 'task_update': {
-      const { id, context, ...rest } = TaskUpdateSchema.parse(args)
-      const updatePayload: Record<string, unknown> = { ...rest }
-
-      if (context) {
-        Object.entries(context).forEach(([k, v]) => {
-          updatePayload[`context.${k}`] = v
-        })
-      }
-
-      const task = await Task.findByIdAndUpdate(id, { $set: updatePayload }, { new: true }).lean()
+      const { id, ...rest } = TaskUpdateSchema.parse(args)
+      const task = await adapter.taskUpdate(id, rest)
       if (!task) return JSON.stringify({ success: false, error: 'Task not found' })
-      return JSON.stringify({ success: true, task })
+      return JSON.stringify({ success: true, task: normalize(task) })
     }
 
     case 'task_delete': {
       const { id } = TaskDeleteSchema.parse(args)
-      const oid = new mongoose.Types.ObjectId(id)
-      await Promise.all([
-        Task.findByIdAndDelete(id),
-        Subtask.deleteMany({ taskId: oid }),
-        Session.deleteMany({ taskId: oid }),
-        Checkpoint.deleteMany({ taskId: oid }),
-      ])
+      await adapter.taskDelete(id)
       return JSON.stringify({ success: true, message: 'Task and all related data deleted' })
     }
 
     case 'task_lock': {
       const { id, agentId } = TaskLockSchema.parse(args)
-      const task = await Task.findOneAndUpdate(
-        { _id: id, $or: [{ agentId: null }, { agentId: agentId }] },
-        { $set: { agentId, lockedAt: new Date() } },
-        { new: true }
-      ).lean()
+      const task = await adapter.taskLock(id, agentId)
       if (!task) return JSON.stringify({ success: false, error: 'Task is already locked by another agent' })
-      return JSON.stringify({ success: true, task })
+      return JSON.stringify({ success: true, task: normalize(task) })
     }
 
     case 'task_unlock': {
       const { id, agentId } = TaskUnlockSchema.parse(args)
-      const task = await Task.findOneAndUpdate(
-        { _id: id, agentId },
-        { $set: { agentId: null, lockedAt: null } },
-        { new: true }
-      ).lean()
+      const task = await adapter.taskUnlock(id, agentId)
       if (!task) return JSON.stringify({ success: false, error: 'Task not found or not owned by this agent' })
-      return JSON.stringify({ success: true, task })
+      return JSON.stringify({ success: true, task: normalize(task) })
     }
 
     default:

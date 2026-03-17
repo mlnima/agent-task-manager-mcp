@@ -4,7 +4,7 @@
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue.svg)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-1.0-green.svg)](https://modelcontextprotocol.io/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-ODM-green.svg)](https://mongoosejs.com/)
+[![Storage](https://img.shields.io/badge/Storage-MongoDB%20%7C%20PostgreSQL%20%7C%20SQLite%20%7C%20JSON-green.svg)]()
 
 ```bash
 npm install -g agent-task-manager-mcp
@@ -93,7 +93,7 @@ AI agents operate within a fixed **context window** (e.g., 100K–200K tokens). 
 │                                   │                                              │
 │                                   ▼                                              │
 │                    ┌───────────────────────────────┐                             │
-│                    │         MongoDB               │                             │
+│                    │         Storage (MongoDB/SQLite/JSON) │                     │
 │                    │  Tasks • Subtasks • Sessions  │                             │
 │                    │  Checkpoints • Progress       │                             │
 │                    └───────────────────────────────┘                             │
@@ -120,11 +120,11 @@ flowchart TB
     end
 
     subgraph Storage["Persistence"]
-        MongoDB[(MongoDB)]
+        DB[(MongoDB / SQLite / JSON)]
     end
 
-    Agent <-->|stdio/JSON-RPC| Server
-    Server <-->|Mongoose| MongoDB
+    Agent <-->|stdio or HTTP| Server
+    Server <-->|Storage Adapter| DB
 
     subgraph ToolsDetail["Tool Categories"]
         T1[task_*]
@@ -238,7 +238,7 @@ flowchart LR
 ## Features
 
 - **14 MCP tools** for full task lifecycle
-- **MongoDB persistence** with Mongoose ODM
+- **MongoDB, SQLite, or JSON file** storage (configurable)
 - **Zod validation** on all tool inputs
 - **Task locking** for multi-agent coordination
 - **Evidence-based verification** (no passing without proof)
@@ -252,8 +252,8 @@ flowchart LR
 ### Prerequisites
 
 - **Node.js** 18+
-- **MongoDB** 6+ (local, remote IP, or Atlas)
-- **MCP-compatible client** (Claude Desktop, Cursor, etc.)
+- **Storage backend** (choose one): MongoDB 6+, PostgreSQL 12+, SQLite (file-based), or JSON file
+- **MCP-compatible client** (Claude Desktop, Cursor, ChatGPT Desktop, etc.)
 
 ### Installation
 
@@ -265,11 +265,9 @@ npm install
 
 ### Environment Setup
 
-(optional and can be define in MCP config of the agent in MONGODB_URI)
-
 ```bash
 cp .env.example .env
-# Edit .env and set MONGODB_URI
+# Edit .env and set STORAGE (mongodb | postgres | sqlite | json) and the corresponding backend config
 ```
 
 ### Run
@@ -277,18 +275,66 @@ cp .env.example .env
 ```bash
 # Production (compiled)
 npm run build
+
+# Stdio mode (default) — for Claude Desktop, Cursor
 npm start
+node dist/index.js
+
+# HTTP mode (default 8000; auto-finds free port if busy)
+npm run start:http
+node dist/index.js --http
+
+# HTTPS mode (default 8443; auto-finds free port if busy)
+npm run start:https
+node dist/index.js --https
+
+# Custom port (node directly — npm eats --port)
+node dist/index.js --http --port=3000
+
+# HTTPS with user-provided cert and key (separate files)
+agent-task-manager-mcp --https --cert=./certs/cert.pem --key=./certs/key.pem
+
+# HTTPS with combined cert+key file (mkcert, or single PEM with both blocks)
+agent-task-manager-mcp --https --cert-key=./certs/localhost.pem
+agent-task-manager-mcp --https --cert=./certs/combined.pem
 ```
 
 ---
 
 ## Configuration
 
+### Storage Backends
+
+| `STORAGE` | Use when | Config |
+|-----------|----------|--------|
+| `mongodb` | Production, multi-agent, document store | `MONGODB_URI` required |
+| `postgres` | Enterprise, high concurrency, swarm of agents | `POSTGRES_URL` or `DATABASE_URL` required |
+| `sqlite` | Local dev, no server, single-file | `SQLITE_PATH` (default: `./data/agent-tasks.db`) |
+| `json` | Quick testing, single agent | `JSON_STORAGE_PATH` (default: `./data/agent-tasks.json`) |
+
+### Choosing a Backend
+
+| Scenario | Recommended |
+|----------|-------------|
+| Swarm of agents, production | `postgres` or `mongodb` |
+| Single agent, local dev | `sqlite` |
+| Quick test, no DB setup | `json` |
+| Existing MongoDB/Postgres infra | Use matching backend |
+
+### Swarm / Multi-Agent
+
+For multiple agents working on tasks concurrently: use **PostgreSQL** or **MongoDB**. Both support task locking and concurrent writes. SQLite and JSON are single-writer; fine for one agent but may conflict with multiple.
+
 ### Environment Variables
 
-| Variable      | Required | Description               | Example                                 |
-| ------------- | -------- | ------------------------- | --------------------------------------- |
-| `MONGODB_URI` | Yes      | MongoDB connection string | `mongodb://localhost:27017/agent-tasks` |
+| Variable | Required when | Description | Example |
+|----------|---------------|-------------|---------|
+| `STORAGE` | No | Backend: `mongodb` \| `postgres` \| `sqlite` \| `json` (default: `mongodb`) | `postgres` |
+| `MONGODB_URI` | `STORAGE=mongodb` | MongoDB connection string | `mongodb://localhost:27017/agent-tasks` |
+| `POSTGRES_URL` or `DATABASE_URL` | `STORAGE=postgres` | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/agent_tasks` |
+| `SQLITE_PATH` | `STORAGE=sqlite` | SQLite database file path | `./data/agent-tasks.db` |
+| `JSON_STORAGE_PATH` | `STORAGE=json` | JSON file path | `./data/agent-tasks.json` |
+| `MCP_ALLOWED_HOSTS` | No | Comma-separated hosts for HTTP/HTTPS (ngrok, etc) | `myapp.ngrok.io,custom.local` |
 
 ### MongoDB URI Examples
 
@@ -301,6 +347,16 @@ MONGODB_URI=mongodb://user:password@IP2:27017/agent-tasks?authSource=admin
 
 # MongoDB Atlas (cloud)
 MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/agent-tasks?retryWrites=true&w=majority
+```
+
+### PostgreSQL URI Examples
+
+```env
+# Local
+POSTGRES_URL=postgresql://user:password@localhost:5432/agent_tasks
+
+# Supabase, Neon, Railway, etc.
+DATABASE_URL=postgresql://user:password@host:5432/dbname?sslmode=require
 ```
 
 > **Note:** URL-encode special characters in passwords (e.g., `@` → `%40`).
@@ -325,6 +381,7 @@ After `npm install -g agent-task-manager-mcp`, use the binary name. No path or `
 			"command": "agent-task-manager-mcp",
 			"args": [],
 			"env": {
+				"STORAGE": "mongodb",
 				"MONGODB_URI": "mongodb://localhost:27017/agent-tasks"
 			}
 		}
@@ -341,12 +398,49 @@ After `npm install -g agent-task-manager-mcp`, use the binary name. No path or `
 			"command": "agent-task-manager-mcp",
 			"args": [],
 			"env": {
-				"MONGODB_URI": "mongodb://localhost:27017/agent-tasks"
+				"STORAGE": "sqlite",
+				"SQLITE_PATH": "./data/agent-tasks.db"
 			}
 		}
 	}
 }
 ```
+
+**PostgreSQL** (swarm of agents, production):
+
+```json
+{
+	"mcpServers": {
+		"agent-task-manager-mcp": {
+			"command": "agent-task-manager-mcp",
+			"args": [],
+			"env": {
+				"STORAGE": "postgres",
+				"POSTGRES_URL": "postgresql://user:password@localhost:5432/agent_tasks"
+			}
+		}
+	}
+}
+```
+
+**No DB server?** Use SQLite or JSON:
+
+```json
+{
+	"mcpServers": {
+		"agent-task-manager-mcp": {
+			"command": "agent-task-manager-mcp",
+			"args": [],
+			"env": {
+				"STORAGE": "json",
+				"JSON_STORAGE_PATH": "./data/agent-tasks.json"
+			}
+		}
+	}
+}
+```
+
+See **[docs/STORAGE.md](docs/STORAGE.md)** for per-backend setup, migration, and troubleshooting.
 
 ---
 
@@ -383,6 +477,39 @@ After `npm install -g agent-task-manager-mcp`, use the binary name. No path or `
 	}
 }
 ```
+
+---
+
+### Option 3: HTTP/HTTPS mode (ChatGPT Desktop, ngrok)
+
+MCP Server URL requires an HTTP(S) endpoint. Supports HTTP, HTTPS, self-signed, mkcert, and user-provided certs.
+
+**HTTP (with ngrok):**
+```bash
+agent-task-manager-mcp --http
+ngrok http 8000
+# Connector URL: https://<subdomain>.ngrok.app/mcp
+```
+
+**HTTPS (local, no ngrok):**
+```bash
+# Auto-generated self-signed cert
+agent-task-manager-mcp --https
+# Connector URL: https://localhost:8443/mcp
+
+# With mkcert (locally trusted)
+mkcert -install && mkcert localhost 127.0.0.1
+agent-task-manager-mcp --https --cert-key=./localhost+1.pem
+
+# With your own cert and key
+agent-task-manager-mcp --https --cert=./cert.pem --key=./key.pem
+```
+
+**Host validation:** localhost, 127.0.0.1, ngrok domains (`*.ngrok-free.app`, `*.ngrok.app`), and `MCP_ALLOWED_HOSTS` (comma-separated env var).
+
+**ChatGPT Desktop** — Settings → Apps & Connectors → Create:
+- **Connector URL:** `https://localhost:8443/mcp` (HTTPS) or `https://<ngrok-subdomain>.ngrok.app/mcp` (HTTP + ngrok)
+- **Authentication:** None
 
 ---
 
@@ -469,7 +596,8 @@ Checkpoint
 
 | Issue                         | Check                                                                    |
 | ----------------------------- | ------------------------------------------------------------------------ |
-| `MONGODB_URI is not set`      | Ensure `.env` exists and is loaded; verify env in MCP config             |
+| `MONGODB_URI is not set`      | When `STORAGE=mongodb`; or switch to `STORAGE=sqlite` or `STORAGE=json`   |
+| `Unknown STORAGE type`        | Use `mongodb`, `sqlite`, or `json`                                       |
 | Connection refused            | MongoDB running? Correct host/port?                                      |
 | Auth failed                   | Verify username/password; URL-encode special chars                       |
 | Tool returns `success: false` | Inspect `error` field in JSON response                                   |
@@ -483,7 +611,8 @@ Checkpoint
 agent-task-manager-mcp/
 ├── src/
 │   ├── index.ts           # MCP server entry point
-│   ├── db.ts              # MongoDB connection
+│   ├── db.ts              # MongoDB connection (when STORAGE=mongodb)
+│   ├── storage/           # Storage abstraction (MongoDB, SQLite, JSON)
 │   ├── models/
 │   │   ├── Task.ts
 │   │   ├── Subtask.ts

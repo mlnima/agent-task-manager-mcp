@@ -1,6 +1,5 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js'
-import mongoose from 'mongoose'
-import { Checkpoint } from '../models/Checkpoint.js'
+import { getRouter, toAgentJSON } from '../storage/index.js'
 import { CheckpointSaveSchema, CheckpointRestoreSchema } from '../schemas/zod.schemas.js'
 
 export const checkpointToolDefinitions: Tool[] = [
@@ -34,35 +33,27 @@ export const checkpointToolDefinitions: Tool[] = [
   },
 ]
 
+const normalize = <T>(obj: T): T => JSON.parse(toAgentJSON(obj)) as T
+
 export const handleCheckpointTool = async (name: string, args: unknown): Promise<string> => {
+  const adapter = getRouter().getAdapter()
+
   switch (name) {
     case 'checkpoint_save': {
       const { taskId, sessionId, label, snapshot } = CheckpointSaveSchema.parse(args)
-      const checkpoint = await Checkpoint.create({
-        taskId: new mongoose.Types.ObjectId(taskId),
-        sessionId: new mongoose.Types.ObjectId(sessionId),
-        label,
-        snapshot,
-      })
-      return JSON.stringify({ success: true, checkpoint })
+      const checkpoint = await adapter.checkpointCreate({ taskId, sessionId, label, snapshot })
+      return JSON.stringify({ success: true, checkpoint: normalize(checkpoint) })
     }
 
     case 'checkpoint_restore': {
       const { taskId, label } = CheckpointRestoreSchema.parse(args)
-      const taskOid = new mongoose.Types.ObjectId(taskId)
 
-      const checkpoint = await Checkpoint.findOne({ taskId: taskOid, label })
-        .sort({ createdAt: -1 })
-        .lean()
-
+      const checkpoint = await adapter.checkpointFindByTaskAndLabel(taskId, label)
       if (!checkpoint) return JSON.stringify({ success: false, error: `No checkpoint found with label "${label}"` })
 
-      const allCheckpoints = await Checkpoint.find({ taskId: taskOid })
-        .sort({ createdAt: -1 })
-        .select('label createdAt sessionId')
-        .lean()
+      const allCheckpoints = await adapter.checkpointFindAllByTask(taskId)
 
-      return JSON.stringify({ success: true, checkpoint, allCheckpoints })
+      return JSON.stringify({ success: true, checkpoint: normalize(checkpoint), allCheckpoints: allCheckpoints.map(normalize) })
     }
 
     default:

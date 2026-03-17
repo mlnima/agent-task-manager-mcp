@@ -5,3 +5,5 @@ dist/
 tasks/
 AGENTS.md
 package-lock.json
+*.db
+*.db*

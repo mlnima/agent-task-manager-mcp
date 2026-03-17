@@ -1,8 +1,5 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js'
-import mongoose from 'mongoose'
-import { Session } from '../models/Session.js'
-import { Task } from '../models/Task.js'
-import { Subtask } from '../models/Subtask.js'
+import { getRouter, toAgentJSON } from '../storage/index.js'
 import { SessionStartSchema, SessionEndSchema } from '../schemas/zod.schemas.js'
 
 export const sessionToolDefinitions: Tool[] = [
@@ -65,31 +62,32 @@ This note is the primary mechanism for continuity between sessions. Write it as 
   },
 ]
 
+const normalize = <T>(obj: T): T => JSON.parse(toAgentJSON(obj)) as T
+
 export const handleSessionTool = async (name: string, args: unknown): Promise<string> => {
+  const adapter = getRouter().getAdapter()
+
   switch (name) {
     case 'session_start': {
       const { taskId, agentId, phase } = SessionStartSchema.parse(args)
-      const taskOid = new mongoose.Types.ObjectId(taskId)
 
-      const task = await Task.findById(taskOid).lean()
+      const task = await adapter.taskFindById(taskId)
       if (!task) return JSON.stringify({ success: false, error: 'Task not found' })
 
-      const lastSession = await Session.findOne({ taskId: taskOid, status: 'completed' })
-        .sort({ endedAt: -1 })
-        .lean()
+      const lastSession = await adapter.sessionFindLatestByTask(taskId, 'completed')
 
-      const session = await Session.create({ taskId: taskOid, agentId, phase })
+      const session = await adapter.sessionCreate({ taskId, agentId, phase })
 
       const [remainingSubtasks, totalSubtasks, passedSubtasks] = await Promise.all([
-        Subtask.countDocuments({ taskId: taskOid, status: { $in: ['pending', 'in_progress'] } }),
-        Subtask.countDocuments({ taskId: taskOid }),
-        Subtask.countDocuments({ taskId: taskOid, status: 'passed' }),
+        adapter.subtaskCountByTask(taskId, ['pending', 'in_progress']),
+        adapter.subtaskCountByTask(taskId),
+        adapter.subtaskCountByTask(taskId, 'passed'),
       ])
 
       return JSON.stringify({
         success: true,
-        sessionId: session._id,
-        task,
+        sessionId: session.id,
+        task: normalize(task),
         lastProgressNote: lastSession?.progressNote ?? null,
         lastGitCommit: lastSession?.gitCommit ?? null,
         subtaskProgress: {
@@ -108,24 +106,18 @@ export const handleSessionTool = async (name: string, args: unknown): Promise<st
       const { id, agentId, progressNote, gitCommit, tokenCount, status, subtasksAttempted, subtasksCompleted } =
         SessionEndSchema.parse(args)
 
-      const session = await Session.findOneAndUpdate(
-        { _id: id, agentId },
-        {
-          $set: {
-            progressNote,
-            gitCommit: gitCommit ?? null,
-            tokenCount: tokenCount ?? null,
-            status,
-            endedAt: new Date(),
-            subtasksAttempted: subtasksAttempted.map((sid) => new mongoose.Types.ObjectId(sid)),
-            subtasksCompleted: subtasksCompleted.map((sid) => new mongoose.Types.ObjectId(sid)),
-          },
-        },
-        { new: true }
-      ).lean()
+      const session = await adapter.sessionUpdate(id, agentId, {
+        progressNote,
+        gitCommit: gitCommit ?? null,
+        tokenCount: tokenCount ?? null,
+        status: status ?? 'completed',
+        endedAt: new Date(),
+        subtasksAttempted: subtasksAttempted ?? [],
+        subtasksCompleted: subtasksCompleted ?? [],
+      })
 
       if (!session) return JSON.stringify({ success: false, error: 'Session not found or not owned by this agent' })
-      return JSON.stringify({ success: true, session })
+      return JSON.stringify({ success: true, session: normalize(session) })
     }
 
     default:
