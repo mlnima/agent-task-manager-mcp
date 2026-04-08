@@ -305,21 +305,21 @@ agent-task-manager-mcp --https --cert=./certs/combined.pem
 
 ### Storage Backends
 
-| `STORAGE` | Use when | Config |
-|-----------|----------|--------|
-| `mongodb` | Production, multi-agent, document store | `MONGODB_URI` required |
-| `postgres` | Enterprise, high concurrency, swarm of agents | `POSTGRES_URL` or `DATABASE_URL` required |
-| `sqlite` | Local dev, no server, single-file | `SQLITE_PATH` (default: `./data/agent-tasks.db`) |
-| `json` | Quick testing, single agent | `JSON_STORAGE_PATH` (default: `./data/agent-tasks.json`) |
+| `STORAGE`  | Use when                                      | Config                                                   |
+| ---------- | --------------------------------------------- | -------------------------------------------------------- |
+| `mongodb`  | Production, multi-agent, document store       | `MONGODB_URI` required                                   |
+| `postgres` | Enterprise, high concurrency, swarm of agents | `POSTGRES_URL` or `DATABASE_URL` required                |
+| `sqlite`   | Local dev, no server, single-file             | `SQLITE_PATH` (default: `./data/agent-tasks.db`)         |
+| `json`     | Quick testing, single agent                   | `JSON_STORAGE_PATH` (default: `./data/agent-tasks.json`) |
 
 ### Choosing a Backend
 
-| Scenario | Recommended |
-|----------|-------------|
-| Swarm of agents, production | `postgres` or `mongodb` |
-| Single agent, local dev | `sqlite` |
-| Quick test, no DB setup | `json` |
-| Existing MongoDB/Postgres infra | Use matching backend |
+| Scenario                        | Recommended             |
+| ------------------------------- | ----------------------- |
+| Swarm of agents, production     | `postgres` or `mongodb` |
+| Single agent, local dev         | `sqlite`                |
+| Quick test, no DB setup         | `json`                  |
+| Existing MongoDB/Postgres infra | Use matching backend    |
 
 ### Swarm / Multi-Agent
 
@@ -327,14 +327,14 @@ For multiple agents working on tasks concurrently: use **PostgreSQL** or **Mongo
 
 ### Environment Variables
 
-| Variable | Required when | Description | Example |
-|----------|---------------|-------------|---------|
-| `STORAGE` | No | Backend: `mongodb` \| `postgres` \| `sqlite` \| `json` (default: `mongodb`) | `postgres` |
-| `MONGODB_URI` | `STORAGE=mongodb` | MongoDB connection string | `mongodb://localhost:27017/agent-tasks` |
-| `POSTGRES_URL` or `DATABASE_URL` | `STORAGE=postgres` | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/agent_tasks` |
-| `SQLITE_PATH` | `STORAGE=sqlite` | SQLite database file path | `./data/agent-tasks.db` |
-| `JSON_STORAGE_PATH` | `STORAGE=json` | JSON file path | `./data/agent-tasks.json` |
-| `MCP_ALLOWED_HOSTS` | No | Comma-separated hosts for HTTP/HTTPS (ngrok, etc) | `myapp.ngrok.io,custom.local` |
+| Variable                         | Required when      | Description                                                                 | Example                                             |
+| -------------------------------- | ------------------ | --------------------------------------------------------------------------- | --------------------------------------------------- |
+| `STORAGE`                        | No                 | Backend: `mongodb` \| `postgres` \| `sqlite` \| `json` (default: `mongodb`) | `postgres`                                          |
+| `MONGODB_URI`                    | `STORAGE=mongodb`  | MongoDB connection string                                                   | `mongodb://localhost:27017/agent-tasks`             |
+| `POSTGRES_URL` or `DATABASE_URL` | `STORAGE=postgres` | PostgreSQL connection string                                                | `postgresql://user:pass@localhost:5432/agent_tasks` |
+| `SQLITE_PATH`                    | `STORAGE=sqlite`   | SQLite database file path                                                   | `./data/agent-tasks.db`                             |
+| `JSON_STORAGE_PATH`              | `STORAGE=json`     | JSON file path                                                              | `./data/agent-tasks.json`                           |
+| `MCP_ALLOWED_HOSTS`              | No                 | Comma-separated hosts for HTTP/HTTPS (ngrok, etc)                           | `myapp.ngrok.io,custom.local`                       |
 
 ### MongoDB URI Examples
 
@@ -455,6 +455,7 @@ See **[docs/STORAGE.md](docs/STORAGE.md)** for per-backend setup, migration, and
 			"command": "node",
 			"args": ["C:/path/to/agent-task-manager-mcp/dist/index.js"],
 			"env": {
+				"STORAGE": "mongodb",
 				"MONGODB_URI": "mongodb://localhost:27017/agent-tasks"
 			}
 		}
@@ -471,6 +472,7 @@ See **[docs/STORAGE.md](docs/STORAGE.md)** for per-backend setup, migration, and
 			"command": "npx",
 			"args": ["tsx", "C:/path/to/agent-task-manager-mcp/src/index.ts"],
 			"env": {
+				"STORAGE": "mongodb",
 				"MONGODB_URI": "mongodb://localhost:27017/agent-tasks"
 			}
 		}
@@ -485,6 +487,7 @@ See **[docs/STORAGE.md](docs/STORAGE.md)** for per-backend setup, migration, and
 MCP Server URL requires an HTTP(S) endpoint. Supports HTTP, HTTPS, self-signed, mkcert, and user-provided certs.
 
 **HTTP (with ngrok):**
+
 ```bash
 agent-task-manager-mcp --http
 ngrok http 8000
@@ -492,6 +495,7 @@ ngrok http 8000
 ```
 
 **HTTPS (local, no ngrok):**
+
 ```bash
 # Auto-generated self-signed cert
 agent-task-manager-mcp --https
@@ -508,6 +512,7 @@ agent-task-manager-mcp --https --cert=./cert.pem --key=./key.pem
 **Host validation:** localhost, 127.0.0.1, ngrok domains (`*.ngrok-free.app`, `*.ngrok.app`), and `MCP_ALLOWED_HOSTS` (comma-separated env var).
 
 **ChatGPT Desktop** — Settings → Apps & Connectors → Create:
+
 - **Connector URL:** `https://localhost:8443/mcp` (HTTPS) or `https://<ngrok-subdomain>.ngrok.app/mcp` (HTTP + ngrok)
 - **Authentication:** None
 
@@ -596,7 +601,7 @@ Checkpoint
 
 | Issue                         | Check                                                                    |
 | ----------------------------- | ------------------------------------------------------------------------ |
-| `MONGODB_URI is not set`      | When `STORAGE=mongodb`; or switch to `STORAGE=sqlite` or `STORAGE=json`   |
+| `MONGODB_URI is not set`      | When `STORAGE=mongodb`; or switch to `STORAGE=sqlite` or `STORAGE=json`  |
 | `Unknown STORAGE type`        | Use `mongodb`, `sqlite`, or `json`                                       |
 | Connection refused            | MongoDB running? Correct host/port?                                      |
 | Auth failed                   | Verify username/password; URL-encode special chars                       |
