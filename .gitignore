@@ -3,6 +3,7 @@ dist/
 .env
 *.js.map
 tasks/
+test/data/*
 AGENTS.md
 package-lock.json
 *.db
